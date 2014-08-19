@@ -1,4 +1,4 @@
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 
 class DateSkipper:
 	
@@ -9,7 +9,7 @@ class DateSkipper:
 		return self
 
 	def next(self):
-		if self.current >= date.today():
+		if self.current.date() >= datetime.now().date():
 			raise StopIteration
 		else:
 			self.current += timedelta(days=1)
