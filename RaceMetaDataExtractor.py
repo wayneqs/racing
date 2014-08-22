@@ -3,7 +3,6 @@ import re
 class RaceMetaDataExtractor:
 	
 	def __init__(self, url):
-		print url
 		self.url = url
 
 	def extract(self):
@@ -11,4 +10,4 @@ class RaceMetaDataExtractor:
 		if m == None:
 			return None, None
 		else:
-			m.group(0), self.url
+			return m.group(1), self.url
