@@ -4,6 +4,7 @@ import requests
 from pymongo import MongoClient
 import backoff
 import uuid
+import re
 
 root = "http://www.racingpost.com"
 epoch = datetime(2000, 1, 1)
