@@ -18,7 +18,7 @@ def date_or_none(current_pointer):
 	if current_pointer == None:
 		return None
 	else:
-		return current_pointer["value"].date()
+		return current_pointer["value"]
 
 def daterange(start_date, end_date):
     for n in range(int ((end_date - start_date).days)):
@@ -34,7 +34,7 @@ def extract_race_id(url):
 def get_race_links():
 	db = MongoClient().racing
 	current_pointer = db.current_pointer_collection.find_one({"type": "race_day"})
-	for d in daterange(date_or_none(current_pointer) or epoch, datetime.now().date()):
+	for d in daterange(date_or_none(current_pointer) or epoch, datetime.now()):
 		r = get_url("http://www.racingpost.com/horses2/results/home.sd?r_date={0}".format(d.strftime("%Y-%m-%d")))
 		if r.status_code == 200:
 			soup = BeautifulSoup(r.text)
