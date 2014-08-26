@@ -31,25 +31,9 @@ def extract_race_id(url):
 		else:
 			return m.group(1), url
 
-def get_race_links():
+def process_race_day(status):
 	db = MongoClient().racing
-	current_pointer = db.current_pointer_collection.find_one({"type": "race_day"})
-	for d in daterange(date_or_none(current_pointer) or epoch, datetime.now()):
-		r = get_url("http://www.racingpost.com/horses2/results/home.sd?r_date={0}".format(d.strftime("%Y-%m-%d")))
-		if r.status_code == 200:
-			soup = BeautifulSoup(r.text)
-			links = soup.select("ul.activeLink a")
-			if links == None:
-				db.race_day_errors.insert({"date": d, "url": r.url})
-			else:
-				for l in links:
-					race_id, href = extract_race_id(l.get('href').replace('amp;','').replace('&popup=yes',''))
-					db.race_day.update({"race_id": race_id}, {"race_id": race_id, "race_url": href, "race_date": d, "status": "new"}, upsert=True)
-				db.current_pointer_collection.update({"type": "race_day"}, {"type": "race_day", "value": d}, upsert=True)
-
-def download_race_links():
-	db = MongoClient().racing
-	for race in db.race_day.find({"status": "new"}):
+	for race in db.race_day.find({"status": status}):
 		r = get_url(root + race["race_url"])
 		if r.status_code == 200:
 			guid = uuid.uuid1()
@@ -66,3 +50,27 @@ def download_race_links():
 				race["status"] = "downloaded"
 				race["download_uri"] = download_uri
 			db.race_day.save(race)
+
+def redo_errors():
+	process_race_day("error")
+
+def download_race_links():
+	process_race_day("new")
+
+def get_race_links():
+	db = MongoClient().racing
+	current_pointer = db.current_pointer_collection.find_one({"type": "race_day"})
+	for d in daterange(date_or_none(current_pointer) or epoch, datetime.now()):
+		r = get_url("http://www.racingpost.com/horses2/results/home.sd?r_date={0}".format(d.strftime("%Y-%m-%d")))
+		if r.status_code == 200:
+			soup = BeautifulSoup(r.text)
+			links = soup.select("ul.activeLink a")
+			if links == None:
+				db.race_day_errors.insert({"date": d, "url": r.url})
+			else:
+				for l in links:
+					race_id, href = extract_race_id(l.get('href').replace('amp;','').replace('&popup=yes',''))
+					db.race_day.update({"race_id": race_id}, {"race_id": race_id, "race_url": href, "race_date": d, "status": "new"}, upsert=True)
+				db.current_pointer_collection.update({"type": "race_day"}, {"type": "race_day", "value": d}, upsert=True)
+
+
