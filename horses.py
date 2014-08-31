@@ -83,7 +83,7 @@ def extract_horses():
 		for tr in soup.select("table.resultRaceGrid tbody"):
 			for race_items in tr.select("tr:nth-of-type(2)"):
 				hid = race_items["data-hid"].strip()
-				if db.horses.find({"hid": hid}).limit(1).count() == 0:
+				if db.horses.find_one({"hid": hid}) == None:
 					try:
 						name = race_items.select("td:nth-of-type(4) span b a")[0].text.strip()
 						db.horses.save({"hid": hid, "name": name})
@@ -171,35 +171,84 @@ def extract_results():
 		db.race_day.save(race)
 		fo.close()
 
-def is_eligible_for_rating(runner):
+def is_finisher(runner):
 	return runner["position"].isdigit()
+
+def get_rating(db, cache, hid):
+	from_cache  = cache.get(hid)
+	if from_cache != None:
+		print "cache hit"
+		return from_cache
+	else:
+		print "cache miss {0}".format(hid)
+		from_db = db.ratings.find_one({"hid": hid}, sort=[("date", -1)])
+		if from_db != None:
+			rating = from_db.next()
+			cache[hid] = rating
+			return rating
+	return None
+
+def save_rating(db, cache, rating):
+	cache[rating["hid"]] = rating
+	db.ratings.save(rating)
+
+def foo():
+	db = MongoClient().racing
+	cache = {}
+	warm_cache(db, cache)
+
+def warm_cache(db, cache):
+	print "warming cache"
+	d = timedelta(weeks=52)
+	most_recent_rating = db.ratings.find_one(sort=[("date", -1)])
+	print most_recent_rating
+	if most_recent_rating != None:
+		start = most_recent_rating["date"] - d
+		ratings = db.ratings.find({"date": { "$gt": start}}).sort("date", 1)
+		print start
+		print "adding {0} ratings to the cache".format(ratings.count())
+		for rating in ratings:
+			cache[rating["hid"]] = rating
+		print "cache warmed"
 
 def score_horses():
 	db = MongoClient().racing
+	cache = {}
 	query = { 
 	           "status": "downloaded", 
 	           "results_extracted": { "$exists": True },
 	           "ratings_calculated": { "$exists": False },
 	           "$where": "this.results.length > 4"
 	        }
+	warm_cache(db, cache)
 	env = trueskill.TrueSkill()
-	for race in db.race_day.find(query).batch_size(30):
+	for race in db.race_day.find(query).sort("race_date", 1).limit(50).batch_size(500):
 		rating_groups = []
-		eligible_runners = []
+		runner_groups = []
+		non_finisher_runner_group = []
+		non_finisher_ratings = []
 		for runner in race["results"]:
-			if is_eligible_for_rating(runner):
-				eligible_runners.append(runner)
-		if len(eligible_runners) >= 2:
-			for runner in eligible_runners:
-				ratings = db.ratings.find({"hid": runner["hid"]}).sort("date", -1).limit(1)
-				if ratings.count() == 0:
+			rating = get_rating(db, cache, runner["hid"])
+			if is_finisher(runner):
+				runner_groups.append((runner,))
+				if rating == None:
 					rating_groups.append((env.create_rating(),))
 				else:
-					rating = ratings.next()
 					rating_groups.append((env.create_rating(rating["mu"], rating["sigma"]),))
+			else:
+				non_finisher_runner_group.append(runner)
+				if rating == None:
+					non_finisher_ratings.append(env.create_rating())
+				else:
+					non_finisher_ratings.append(env.create_rating(rating["mu"], rating["sigma"]))
+		if len(non_finisher_runner_group) > 0:
+			runner_groups.append(tuple(non_finisher_runner_group))
+			rating_groups.append(tuple(non_finisher_ratings))
+
+		if len(runner_groups) >= 2:
 			rated_rating_groups = env.rate(rating_groups)
-			for runner, rating in zip(eligible_runners, rated_rating_groups):
-				(r,) = rating
-				db.ratings.save({"hid": runner["hid"], "date": race["race_date"], "mu": r.mu, "sigma": r.sigma})
+			for runner_group, rating_group in zip(runner_groups, rated_rating_groups):
+				for runner, rating in zip(runner_group, rating_group):
+					save_rating(db, cache, {"hid": runner["hid"], "date": race["race_date"], "mu": rating.mu, "sigma": rating.sigma})
 		race["ratings_calculated"] = True
 		db.race_day.save(race)
