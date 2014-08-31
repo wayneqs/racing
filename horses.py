@@ -192,11 +192,6 @@ def save_rating(db, cache, rating):
 	cache[rating["hid"]] = rating
 	db.ratings.save(rating)
 
-def foo():
-	db = MongoClient().racing
-	cache = {}
-	warm_cache(db, cache)
-
 def warm_cache(db, cache):
 	print "warming cache"
 	d = timedelta(weeks=52)
@@ -205,7 +200,6 @@ def warm_cache(db, cache):
 	if most_recent_rating != None:
 		start = most_recent_rating["date"] - d
 		ratings = db.ratings.find({"date": { "$gt": start}}).sort("date", 1)
-		print start
 		print "adding {0} ratings to the cache".format(ratings.count())
 		for rating in ratings:
 			cache[rating["hid"]] = rating
@@ -222,7 +216,7 @@ def score_horses():
 	        }
 	warm_cache(db, cache)
 	env = trueskill.TrueSkill()
-	for race in db.race_day.find(query).sort("race_date", 1).limit(50).batch_size(500):
+	for race in db.race_day.find(query).sort("race_date", 1).batch_size(500):
 		rating_groups = []
 		runner_groups = []
 		non_finisher_runner_group = []
