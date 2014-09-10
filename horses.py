@@ -360,6 +360,19 @@ def compute_weight(runner):
 	stone = weightDict["st"] or 0
 	return int(stone) * 14 + int(lb)
 
+def compute_ema(period, value_t, ema_tm1):
+	if ema_tm1 == None:
+		return 0
+	else:
+		k = 2.0 / (period + 1)
+		return value_t * k + ema_tm1 * (1 - k)
+
+def compute_cma(value_t, N, cma_tm1):
+	if cma_tm1 == None:
+		return 0
+	else:
+		return cma_tm1 + (value_t - cma_tm1) / (N + 1)
+
 def back_test():
 	db = MongoClient().racing
 	target_date = datetime(2014, 9, 1)

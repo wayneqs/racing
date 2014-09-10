@@ -49,7 +49,35 @@ def extract_runner_distance(distance_string):
 		if fractional != None:
 			distance += fractions[fractional.replace("fs", "")]
 	return distance * 8 * 0.33333
-	
+
+def extract_winning_time(soup):
+	race_info = soup.select("div.raceInfo")
+	if len(race_info) == 0:
+		return None, {"message": "no_race_info"}
+	else:
+		if "TIME" not in race_info[0].text:
+			return None, {"message": "no_time", "race_info": race_info[0].text}
+		else:
+			m = re.findall('TIME ([0-9]*\.?[0-9]+)s|TIME (\d+)m ([0-9]*\.?[0-9]+)s', race_info[0].text)
+			if len(m) == 0 or all(x == "" for x in m[0]):
+				return None, {"message": "time_format", "race_info": race_info[0].text}
+			else:
+				matches = m[0]
+				try:
+					if matches[0] != "":
+						secs = float(matches[0])
+						if secs >= 20:
+							return secs, None
+						elif secs < 20 and secs > 0:
+							splits = matches[0].split(".")
+							return float(splits[0]) * 60 + float(splits[1]), None
+					else:
+						return float(matches[1]) * 60 + float(matches[2]), None
+				except ValueError, e:
+					return None, {"message": "time_format", "race_info": race_info[0].text}
+	return None, {"message": "mega failure"}
+					
+
 def get_aus_going(going_text):
 	if re.search("fast|good 2", going_text, re.IGNORECASE) != None:
 		return {"fast": 1, "medium": 0, "slow": 0}
