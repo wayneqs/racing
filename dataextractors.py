@@ -5,24 +5,92 @@ import re
 
 def extract_runners(soup):
 	runners = []
-	for tr in soup.select("table.resultRaceGrid tbody"):
-		for race_items in tr.select("tr:nth-of-type(2)"):
+	for tableBody in soup.select("table.resultRaceGrid tbody"):
+		for race_items in tableBody.select("tr:nth-of-type(2)"):
 			runner = {}
 			hid = race_items["data-hid"].strip()
 			position = race_items.select("td:nth-of-type(2) h3")[0].text.strip()
 			dist = race_items.select("td:nth-of-type(3)")[0].text.strip()
 			age = race_items.select("td:nth-of-type(5)")[0].text.strip()
-			weight, headgear = extract_impediments(race_items.select("td:nth-of-type(6)")[0])
-			tid = extract_trainer_id(race_items.select("td:nth-of-type(7) a")[0].get("href").strip())
+			official_rating = race_items.select("td:nth-of-type(8)")[0].text.strip()
+			weight, headgear = extract_impediments(race_items.select("td:nth-of-type(6)"))
+			tid = extract_trainer(race_items.select("td:nth-of-type(7) a"))
+			jid, claiming_weight = extract_jockey(tableBody.select("tr:nth-of-type(3)"))
 			runner["hid"] = hid
 			runner["position"] = position
-			if dist: runner["dist"] = dist
+			runner["dist"] = dist
 			runner["age"] = age
+			runner["official_rating"] = official_rating
 			runner["weight"] = weight
-			if headgear: runner["headgear"] = headgear
+			runner["weight"]["claiming_weight"] = claiming_weight
+			runner["weight"]["total"] = compute_weight(runner) - claiming_weight
+			runner["headgear"] = headgear
 			runner["tid"] = tid
+			runner["jid"] = jid
 			runners.append(runner)
 	return runners, None
+
+def extract_trainer(soup):
+	if len(soup) > 0:
+		return re.search('\d+', soup[0].get("href").strip())
+	return None
+
+def extract_jockey(soup):
+	if len(soup) > 0:
+		jid = re.search('\d+', soup[0].select('a')[0].get("href").strip())
+		tag = soup[0].select('sup')
+		if len(tag) > 0:
+			claiming_weight = tag[0].text.strip()
+			claiming_weight = int(claiming_weight)
+		return jid, claiming_weight
+	return None, 0
+
+def extract_headgear(result, value):
+	if "b" in value:
+		result["blinkers"] = True
+	if "v" in value:
+		result["visor"] = True
+	if "h" in value:
+		result["hood"] = True
+	if "e/s" in value:
+		result["eye_shield"] = True
+	if "t" in value:
+		result["tongue_strap"] = True
+	if "p" in value:
+		result["sheepskin_cheekpieces"] = True
+
+def compute_weight(runner):
+	weightDict = runner["weight"]
+	lb = weightDict["lb"] or 0
+	stone = weightDict["st"] or 0
+	return int(stone) * 14 + int(lb)
+
+def extract_impediments(soup):
+	weight = {}
+	headgear = {}
+	count = 0
+	for value in content.stripped_strings:
+		count += 1
+		if count == 1:
+			m = re.search('(\d+)-(\d+)', value)
+			if m != None:
+				weight["st"] = m.group(1)
+				weight["lb"] = m.group(2)
+		if count == 2:
+			if content.img != None:
+				weight["overweight"] = value
+			else:
+				extract_headgear(headgear, value)
+		if count == 3:
+			if content.img != None:
+				extract_headgear(headgear, value)
+			else:
+				if value == "1":
+					headgear["first_time"] = True
+		if count == 4 and content.img != None:
+			if value == "1":
+				headgear["first_time"] = True
+	return (weight, headgear)
 
 def extract_race_type(soup):
 	try:
@@ -38,8 +106,8 @@ def extract_race_type(soup):
 def extract_runner_distance(distance_string):
 	distance = 0
 	if distance_string != None:
-		fractions = {u'\xbd': 0.5, u'\xbc': 0.25, u'\xbe': 0.75, 
-					'nk': 0.35, 'snk': 0.25, 'hd': 0.22, 'shd': 0.18, 
+		fractions = {u'\xbd': 0.5, u'\xbc': 0.25, u'\xbe': 0.75,
+					'nk': 0.35, 'snk': 0.25, 'hd': 0.22, 'shd': 0.18,
 					'dht': 0, 'nse': 0.14, 'dist': 50, 'min': 0.8}
 		(whole, fractional) = re.match('(\d+)?(\D+)?', distance_string).groups()
 		if whole == None and fractional == None:
@@ -73,10 +141,9 @@ def extract_winning_time(soup):
 							return float(splits[0]) * 60 + float(splits[1]), None
 					else:
 						return float(matches[1]) * 60 + float(matches[2]), None
-				except ValueError, e:
+				except ValueError:
 					return None, {"message": "time_format", "race_info": race_info[0].text}
 	return None, {"message": "mega failure"}
-					
 
 def get_aus_going(going_text):
 	if re.search("fast|good 2", going_text, re.IGNORECASE) != None:
@@ -110,7 +177,6 @@ def get_flat_distance_category(distance):
 	else:
 		return {"short": 0, "medium": 0, "long": 1}
 
-
 def get_jumps_distance_category(distance):
 	if distance <= 4400:
 		return {"short": 1, "medium": 0, "long": 0}
@@ -124,7 +190,7 @@ def value_from_values(values, indices):
 		if values[i] != "":
 			return int(values[i])
 	return 0
-	
+
 def compute_distance(matches):
 	if len(matches) == 0 or all(x == "" for x in matches[0]):
 		return None
@@ -166,11 +232,9 @@ def extract_race_distance(soup):
 			if distance == None or distance == 0:
 				return None, {"message": "Distance format is bad"}
 		race_type, errors = extract_race_type(soup)
-		if errors == None:		
+		if errors == None:
 			if race_type == "flat":
 				return {"value": distance, "category": get_flat_distance_category(distance)}, None
 			else:
 				return {"value": distance, "category": get_jumps_distance_category(distance)}, None
 		return None, errors
-
-
